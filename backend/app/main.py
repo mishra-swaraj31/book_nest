@@ -9,7 +9,7 @@ app.include_router(bookings.router)
 
 app.add_middleware(
        CORSMiddleware,
-       allow_origins=["*"],  # or ["*"] for all origins (dev only)
+       allow_origins=["*"],
        allow_credentials=True,
        allow_methods=["*"],
        allow_headers=["*"],
