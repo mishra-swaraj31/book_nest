@@ -5,6 +5,7 @@ from bson import ObjectId
 from fastapi import Query
 from typing import Optional
 import pymongo
+from datetime import date, datetime, timedelta
 
 router = APIRouter()
 
@@ -12,14 +13,6 @@ router = APIRouter()
 async def property_create(prop: PropertyIn):
     result = await db.properties.insert_one(prop.dict())
     return {"id": str(result.inserted_id)}
-
-@router.get("/property/ReadAll")
-async def property_read_all():
-    props = await db.properties.find().to_list(100)
-    for prop in props:
-        prop["id"] = str(prop["_id"])
-        del prop["_id"]
-    return props
 
 @router.get("/property/Read/{property_id}")
 async def property_read(property_id: str):
@@ -62,17 +55,18 @@ async def property_update(property_id: str, prop_update: PropertyIn):
 @router.get("/property/ReadAvailability/{property_id}")
 async def property_read_availability(property_id: str, from_date: str, to_date: str):
     """
-    Check property availability across date range by counting overlapping bookings per day
+    Check property availability across date range by counting overlapping bookings per day.
+    Accepts from_date and to_date as 'YYYY-MM-DD' strings.
     """
     try:
-        # Convert date strings to datetime
-        start_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-        end_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        # Convert ISO date strings (YYYY-MM-DD) to date objects
+        start_date = date.fromisoformat(from_date)
+        end_date = date.fromisoformat(to_date)
 
         if start_date >= end_date:
             raise HTTPException(status_code=400, detail="Invalid date range")
 
-        # Fetch property
+        # Fetch the property by ID
         prop = await db.properties.find_one({"_id": ObjectId(property_id)})
         if not prop:
             raise HTTPException(status_code=404, detail="Property not found")
@@ -82,37 +76,36 @@ async def property_read_availability(property_id: str, from_date: str, to_date: 
         # Fetch all bookings that overlap any day in this range
         overlapping_bookings = await db.bookings.find({
             "property_id": property_id,
-            "from_date": {"$lt": end_date},
-            "to_date": {"$gt": start_date}
+            "from_date": {"$lt": datetime.combine(end_date, datetime.min.time())},
+            "to_date": {"$gt": datetime.combine(start_date, datetime.min.time())}
         }).to_list(length=1000)
 
-        # Initialize date-wise booking counter
+        # Initialize booking counter per date in the range
         date_bookings = {}
-
         current_date = start_date
         while current_date < end_date:
-            date_bookings[current_date.date()] = 0
+            date_bookings[current_date] = 0
             current_date += timedelta(days=1)
 
-        # Count how many rooms are booked on each date
+        # Count guests on each day
         for booking in overlapping_bookings:
             b_from = booking["from_date"].date()
             b_to = booking["to_date"].date()
             guests = booking.get("guests", 1)
 
-            temp_date = max(start_date.date(), b_from)
-            while temp_date < min(end_date.date(), b_to):
+            temp_date = max(start_date, b_from)
+            while temp_date < min(end_date, b_to):
                 if temp_date in date_bookings:
                     date_bookings[temp_date] += guests
                 temp_date += timedelta(days=1)
 
-        # Check availability for each date
-        unavailable_dates = [date for date, booked in date_bookings.items() if booked >= total_rooms]
+        # Detect unavailable dates
+        unavailable_dates = [d.isoformat() for d, booked in date_bookings.items() if booked >= total_rooms]
 
         return {
             "property_id": property_id,
             "total_rooms": total_rooms,
-            "date_bookings": date_bookings,
+            "date_bookings": {d.isoformat(): count for d, count in date_bookings.items()},
             "unavailable_dates": unavailable_dates,
             "is_available": len(unavailable_dates) == 0,
             "from_date": from_date,
@@ -121,7 +114,7 @@ async def property_read_availability(property_id: str, from_date: str, to_date: 
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error checking availability: {str(e)}")
-
+    
 @router.get("/property/ReadAll")
 async def property_read_all(
     location: Optional[str] = None,
