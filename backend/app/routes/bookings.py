@@ -76,3 +76,18 @@ async def bookings_update(booking_id: str, update: BookingUpdate):
     }
     await db.bookings.update_one({"_id": ObjectId(booking_id)}, {"$set": update_data})
     return {"message": "Booking updated", "total_cost": total_cost}
+
+# bookings.py
+@router.put("/bookings/{booking_id}/status")
+async def update_booking_status(booking_id: str, status: str):
+    if status not in ["accepted", "rejected"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    
+    result = await db.bookings.update_one(
+        {"_id": ObjectId(booking_id)},
+        {"$set": {"status": status}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # return {"message": f"Booking {status}"}

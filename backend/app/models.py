@@ -27,14 +27,22 @@ class PropertyIn(BaseModel):
 class Property(PropertyIn):
     id: str
 
+# In BookingIn (add default status)
 class BookingIn(BaseModel):
     property_id: str
     from_date: datetime
     to_date: datetime
     user_id: str = "default-user"
     guests: int = 1
-    total_cost: float = 0.0  # Total cost for the entire stay
+    total_cost: float = 0.0
+    status: str = "pending"  # "pending", "accepted", "rejected"
 
 # Model for returning a booking (includes id)
 class Booking(BookingIn):
     id: str
+
+# models.py
+class HotelOwner(BaseModel):
+    owner_id: str  # Email or unique ID
+    name: str
+    property_ids: List[str] = []  # List of property ObjectIDs
